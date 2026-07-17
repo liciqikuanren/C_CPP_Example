@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "🚀 调试 Hello World",
+            "type": "cppvsdbg",                          // Visual Studio 调试器
+            "request": "launch",
+            "program": "${command:cmake.launchTargetPath}", // 自动找 CMake 编译产物
+            "args": [],
+            "stopAtEntry": false,                        // false = 从 main 开始；true = 停在入口
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal"              // 输出到 VS Code 内置终端
+        },
+        {
+            "name": "▶ 直接运行（不调试）",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${command:cmake.launchTargetPath}",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "MIMode": "none"                             // 不加调试器，只运行
+        }
+    ]
+}
