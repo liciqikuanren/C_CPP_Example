@@ -1,0 +1,20 @@
+# CMake 构建目录
+build/
+
+# Visual Studio 生成文件
+.vs/
+*.user
+*.suo
+*.sln
+*.vcxproj
+*.vcxproj.filters
+
+# 编译产物
+*.exe
+*.obj
+*.o
+*.lib
+*.dll
+*.pdb
+*.ilk
+*.exp
