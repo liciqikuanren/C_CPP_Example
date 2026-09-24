@@ -2,8 +2,9 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-
+uint16_t Test=0;
 VOID CALLBACK TimerCallback(PVOID /*lpParam*/, BOOLEAN /*TimerOrWaitFired*/) {
+    Test++;
     std::cout << "Hello World" << std::endl;
 }
 
@@ -22,7 +23,7 @@ int main() {
     );
 
     Sleep(5000);  // keep main thread alive 5s
-
+    
     // = xTimerStop + xTimerDelete
     DeleteTimerQueueTimer(NULL, hTimer, NULL);
     std::cout << "Timer stopped." << std::endl;

@@ -1,0 +1,29 @@
+{
+    // ====== 编译器（Kit）选择 ======
+    // CMake Tools 会自动扫描系统中可用的编译器工具链，
+    // 点击 VS Code 底部状态栏的 "🔧" 图标即可切换。
+    //
+    // 你系统上的选项：
+    //   ✅ Visual Studio Build Tools 2022 Release - amd64  (MSVC) ← 推荐
+    //   （暂无 MinGW/g++，如需可自行安装 MSYS2 后添加）
+    //
+    // 下面设置默认优先使用 MSVC：
+
+    "cmake.preferredGenerators": [
+        "Visual Studio 17 2022"
+    ],
+
+    // ====== 构建类型 ======
+    // Debug:   带调试符号，不优化，可设断点 ← 调试时用
+    // Release: 优化过，运行快，无法调试   ← 最终发布用
+    // 底部状态栏可随时切换，下拉菜单选 Debug / Release
+
+    "cmake.configureArgs": [],
+
+    // ====== 保存时自动配置 ======
+    // 改了 CMakeLists.txt 后自动重新 cmake -B build
+    "cmake.configureOnEdit": true,
+
+    // ====== 自动选择 Kit ======
+    "cmake.configureOnOpen": true
+}
