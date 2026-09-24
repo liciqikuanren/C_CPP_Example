@@ -1,0 +1,9 @@
+# 构建产物
+build*/
+sim/build*/
+
+# 第三方依赖（LVGL / SDL2，体积大，不入库）
+third_party/
+
+# DSH 工具临时目录（非工程代码）
+.dsh-repair/

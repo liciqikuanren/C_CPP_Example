@@ -1,0 +1,12 @@
+{
+    // 用 Ninja 生成器：你机器上没装 make，MinGW Makefiles 生成器会失败；
+    // Ninja 已在 PATH 中（随 MinGW 一起装的）。
+    "cmake.generator": "Ninja",
+
+    // 打开 LVGL GUI 版（开关 + 滑条）。
+    // 想编回命令行版：把它改成 -DBUILD_LVGL_GUI=OFF，
+    // 然后 Ctrl+Shift+P → CMake: Delete Cache and Reconfigure。
+    "cmake.configureArgs": [
+        "-DBUILD_LVGL_GUI=ON"
+    ]
+}

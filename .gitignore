@@ -1,0 +1,24 @@
+# 构建产物
+build/
+build*/
+**/build/
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.dll
+*.exp
+*.idb
+*.tlog
+*.lastbuildstate
+*.recipe
+
+# IDE
+.vs/
+.cache/
+compile_commands.json
+
+# CMake
+CMakeUserPresets.json

@@ -1,124 +1,124 @@
 /* event_example.c
- * ¼ÓÇ¿·´À¡°æ£ºÔËĞĞºó»áÇåÎúÏÔÊ¾Ã¿Ò»²½·¢ÉúÁËÊ²Ã´
- * ±àÒë£ºgcc event.c event_example.c -o event_test
- * ÔËĞĞºó»á¿´µ½´óÁ¿²ÊÉ«Êä³ö£¨Windows cmd Ö§³Ö²¿·ÖÑÕÉ«£©
+ * åŠ å¼ºåé¦ˆç‰ˆï¼šè¿è¡Œåä¼šæ¸…æ™°æ˜¾ç¤ºæ¯ä¸€æ­¥å‘ç”Ÿäº†ä»€ä¹ˆ
+ * ç¼–è¯‘ï¼šgcc event.c event_example.c -o event_test
+ * è¿è¡Œåä¼šçœ‹åˆ°å¤§é‡å½©è‰²è¾“å‡ºï¼ˆWindows cmd æ”¯æŒéƒ¨åˆ†é¢œè‰²ï¼‰
  */
 
 #include "event.h"
 #include <stdio.h>
 #include <string.h>
 
-// ¶¨ÒåÒ»Ğ©ÊÂ¼şÀàĞÍ
+// å®šä¹‰ä¸€äº›äº‹ä»¶ç±»å‹
 typedef enum {
-    EVENT_BUTTON_PRESS = 1,   // °´Å¥°´ÏÂ
-    EVENT_SENSOR_DATA,        // ´«¸ĞÆ÷Êı¾İµ½´ï
-    EVENT_SYSTEM_ALERT,       // ÏµÍ³¾¯±¨
-    EVENT_USER_LOGIN          // ÓÃ»§µÇÂ¼
+    EVENT_BUTTON_PRESS = 1,   // æŒ‰é’®æŒ‰ä¸‹
+    EVENT_SENSOR_DATA,        // ä¼ æ„Ÿå™¨æ•°æ®åˆ°è¾¾
+    EVENT_SYSTEM_ALERT,       // ç³»ç»Ÿè­¦æŠ¥
+    EVENT_USER_LOGIN          // ç”¨æˆ·ç™»å½•
 } MyEventType;
 
-// ÓÅÏÈ¼¶¶¨Òå
+// ä¼˜å…ˆçº§å®šä¹‰
 #define PRIORITY_LOW     0
 #define PRIORITY_NORMAL  1
 #define PRIORITY_HIGH    2
 
-// »Øµ÷1£º´¦Àí°´Å¥°´ÏÂÊÂ¼ş
+// å›è°ƒ1ï¼šå¤„ç†æŒ‰é’®æŒ‰ä¸‹äº‹ä»¶
 void on_button_press(Event_t* event, void* arg)
 {
     const char* button_name = (const char*)arg;
-    printf("\033[1;33m[»Øµ÷´¥·¢] °´Å¥ÊÂ¼ş´¦ÀíÖĞ...\033[0m\n");
-    printf("   ¡ú °´Å¥Ãû³Æ: %s\n", button_name);
-    printf("   ¡ú Ê±¼ä´Á: %u ms\n", event->timestamp);
-    printf("   ¡ú ÓÅÏÈ¼¶: %d\n\n", event->priority);
+    printf("\033[1;33m[å›è°ƒè§¦å‘] æŒ‰é’®äº‹ä»¶å¤„ç†ä¸­...\033[0m\n");
+    printf("   â†’ æŒ‰é’®åç§°: %s\n", button_name);
+    printf("   â†’ æ—¶é—´æˆ³: %u ms\n", event->timestamp);
+    printf("   â†’ ä¼˜å…ˆçº§: %d\n\n", event->priority);
 }
 
-// »Øµ÷2£º´¦Àí´«¸ĞÆ÷Êı¾İ
+// å›è°ƒ2ï¼šå¤„ç†ä¼ æ„Ÿå™¨æ•°æ®
 void on_sensor_data(Event_t* event, void* arg)
 {
-    (void)arg;  // Î´Ê¹ÓÃ
-    printf("\033[1;32m[»Øµ÷´¥·¢] ´«¸ĞÆ÷Êı¾İÒÑµ½´ï£¡\033[0m\n");
+    (void)arg;  // æœªä½¿ç”¨
+    printf("\033[1;32m[å›è°ƒè§¦å‘] ä¼ æ„Ÿå™¨æ•°æ®å·²åˆ°è¾¾ï¼\033[0m\n");
     if (event->data_size > 0) {
-        printf("   ¡ú Êı¾İ³¤¶È: %d ×Ö½Ú\n", event->data_size);
-        printf("   ¡ú Êı¾İÄÚÈİ: ");
+        printf("   â†’ æ•°æ®é•¿åº¦: %d å­—èŠ‚\n", event->data_size);
+        printf("   â†’ æ•°æ®å†…å®¹: ");
         for (uint8_t i = 0; i < event->data_size; i++) {
             printf("%02X ", event->data[i]);
         }
         printf("\n");
-        // ¼ÙÉèÊÇÎÂ¶ÈÊı¾İ£¨Ê¾Àı£©
+        // å‡è®¾æ˜¯æ¸©åº¦æ•°æ®ï¼ˆç¤ºä¾‹ï¼‰
         if (event->data_size >= 2) {
             int temp = (event->data[0] << 8) | event->data[1];
-            printf("   ¡ú ½âÎöÎÂ¶È: %.1f ¡ãC\n", temp / 10.0);
+            printf("   â†’ è§£ææ¸©åº¦: %.1f Â°C\n", temp / 10.0);
         }
     }
     printf("\n");
 }
 
-// »Øµ÷3£º´¦ÀíÏµÍ³¾¯±¨
+// å›è°ƒ3ï¼šå¤„ç†ç³»ç»Ÿè­¦æŠ¥
 void on_system_alert(Event_t* event, void* arg)
 {
     int* alert_level = (int*)arg;
-    printf("\033[1;31m[½ô¼±»Øµ÷] ÏµÍ³¾¯±¨´¥·¢£¡\033[0m\n");
-    printf("   ¡ú ¾¯±¨¼¶±ğ: %d\n", *alert_level);
-    printf("   ¡ú ÊÂ¼şÊ±¼ä: %u ms\n\n", event->timestamp);
+    printf("\033[1;31m[ç´§æ€¥å›è°ƒ] ç³»ç»Ÿè­¦æŠ¥è§¦å‘ï¼\033[0m\n");
+    printf("   â†’ è­¦æŠ¥çº§åˆ«: %d\n", *alert_level);
+    printf("   â†’ äº‹ä»¶æ—¶é—´: %u ms\n\n", event->timestamp);
 }
 
-// È«¾Ö¹Û²ìÕß£º¼à¿ØËùÓĞÊÂ¼ş£¨×îÃ÷ÏÔµÄ·´À¡£©
+// å…¨å±€è§‚å¯Ÿè€…ï¼šç›‘æ§æ‰€æœ‰äº‹ä»¶ï¼ˆæœ€æ˜æ˜¾çš„åé¦ˆï¼‰
 void global_observer(Event_t* event, void* arg)
 {
     (void)arg;
     static const char* type_names[] = {
-        "Î´Öª", "°´Å¥°´ÏÂ", "´«¸ĞÆ÷Êı¾İ", "ÏµÍ³¾¯±¨", "ÓÃ»§µÇÂ¼"
+        "æœªçŸ¥", "æŒ‰é’®æŒ‰ä¸‹", "ä¼ æ„Ÿå™¨æ•°æ®", "ç³»ç»Ÿè­¦æŠ¥", "ç”¨æˆ·ç™»å½•"
     };
-    const char* type_name = (event->type < 5) ? type_names[event->type] : "ÆäËûÊÂ¼ş";
+    const char* type_name = (event->type < 5) ? type_names[event->type] : "å…¶ä»–äº‹ä»¶";
 
-    printf("\033[1;36m=== È«¾Ö¹Û²ìÕß²¶»ñÊÂ¼ş ===\033[0m\n");
-    printf("   ÀàĞÍID: %u ¡ú %s\n", event->type, type_name);
-    printf("   ÓÅÏÈ¼¶: %d\n", event->priority);
-    printf("   Ê±¼ä´Á: %u ms\n", event->timestamp);
-    printf("   Êı¾İ´óĞ¡: %d ×Ö½Ú\n", event->data_size);
+    printf("\033[1;36m=== å…¨å±€è§‚å¯Ÿè€…æ•è·äº‹ä»¶ ===\033[0m\n");
+    printf("   ç±»å‹ID: %u â†’ %s\n", event->type, type_name);
+    printf("   ä¼˜å…ˆçº§: %d\n", event->priority);
+    printf("   æ—¶é—´æˆ³: %u ms\n", event->timestamp);
+    printf("   æ•°æ®å¤§å°: %d å­—èŠ‚\n", event->data_size);
     printf("\033[1;36m==========================\033[0m\n\n");
 }
 
 int main(void)
 {
-    printf("\033[1;34m========== ÊÂ¼şÏµÍ³ÍêÕûÑİÊ¾¿ªÊ¼ ==========\033[0m\n\n");
+    printf("\033[1;34m========== äº‹ä»¶ç³»ç»Ÿå®Œæ•´æ¼”ç¤ºå¼€å§‹ ==========\033[0m\n\n");
 
-    EVENT_Init();  // ³õÊ¼»¯
+    EVENT_Init();  // åˆå§‹åŒ–
 
-    // ¶©ÔÄ¸÷ÖÖÊÂ¼ş
-    EVENT_Subscribe(EVENT_BUTTON_PRESS, on_button_press, "Æô¶¯°´Å¥");
-    EVENT_Subscribe(EVENT_BUTTON_PRESS, on_button_press, "Í£Ö¹°´Å¥");
+    // è®¢é˜…å„ç§äº‹ä»¶
+    EVENT_Subscribe(EVENT_BUTTON_PRESS, on_button_press, "å¯åŠ¨æŒ‰é’®");
+    EVENT_Subscribe(EVENT_BUTTON_PRESS, on_button_press, "åœæ­¢æŒ‰é’®");
     EVENT_Subscribe(EVENT_SENSOR_DATA, on_sensor_data, NULL);
 
     int alert_level = 3;
     EVENT_Subscribe(EVENT_SYSTEM_ALERT, on_system_alert, &alert_level);
 
-    // ×¢²áÈ«¾Ö¹Û²ìÕß£¨»á¿´µ½ËùÓĞÊÂ¼ş£©
+    // æ³¨å†Œå…¨å±€è§‚å¯Ÿè€…ï¼ˆä¼šçœ‹åˆ°æ‰€æœ‰äº‹ä»¶ï¼‰
     EVENT_RegisterObserver(global_observer, NULL);
 
-    printf("\033[1;35m¡ú ¶©ÔÄºÍ¹Û²ìÕß×¢²áÍê³É£¬¿ªÊ¼·¢²¼ÊÂ¼ş...\033[0m\n\n");
+    printf("\033[1;35mâ†’ è®¢é˜…å’Œè§‚å¯Ÿè€…æ³¨å†Œå®Œæˆï¼Œå¼€å§‹å‘å¸ƒäº‹ä»¶...\033[0m\n\n");
 
-    // ·¢²¼¸÷ÖÖÊÂ¼ş
+    // å‘å¸ƒå„ç§äº‹ä»¶
     EVENT_Publish(EVENT_BUTTON_PRESS, PRIORITY_HIGH, NULL, 0);
 
-    uint8_t sensor_data[] = {0x01, 0x68};  // Ê¾Àı£º36.8¡ãC ¡ú 0x0168 (368)
+    uint8_t sensor_data[] = {0x01, 0x68};  // ç¤ºä¾‹ï¼š36.8Â°C â†’ 0x0168 (368)
     EVENT_Publish(EVENT_SENSOR_DATA, PRIORITY_NORMAL, sensor_data, sizeof(sensor_data));
 
     const char* login_user = "admin";
     EVENT_Publish(EVENT_USER_LOGIN, PRIORITY_NORMAL, login_user, strlen(login_user) + 1);
 
-    EVENT_Publish(EVENT_SYSTEM_ALERT, PRIORITY_HIGH, "µçÔ´¹ÊÕÏ", 10);
+    EVENT_Publish(EVENT_SYSTEM_ALERT, PRIORITY_HIGH, "ç”µæºæ•…éšœ", 10);
 
-    // ´¦ÀíËùÓĞÊÂ¼ş£¨¹Ø¼üÒ»²½£¡£©
-    printf("\033[1;35m¡ú ¿ªÊ¼´¦Àí¶ÓÁĞÖĞµÄÊÂ¼ş...\033[0m\n\n");
+    // å¤„ç†æ‰€æœ‰äº‹ä»¶ï¼ˆå…³é”®ä¸€æ­¥ï¼ï¼‰
+    printf("\033[1;35mâ†’ å¼€å§‹å¤„ç†é˜Ÿåˆ—ä¸­çš„äº‹ä»¶...\033[0m\n\n");
     int processed = EVENT_Process();
 
-    printf("\033[1;32m±¾´Î¹²´¦ÀíÁË %d ¸öÊÂ¼ş\033[0m\n", processed);
-    printf("µ±Ç°¶ÓÁĞÊ£ÓàÊÂ¼ş: %u ¸ö\n", EVENT_GetCount());
+    printf("\033[1;32mæœ¬æ¬¡å…±å¤„ç†äº† %d ä¸ªäº‹ä»¶\033[0m\n", processed);
+    printf("å½“å‰é˜Ÿåˆ—å‰©ä½™äº‹ä»¶: %u ä¸ª\n", EVENT_GetCount());
 
-    printf("\n\033[1;34m========== ÑİÊ¾½áÊø ==========\033[0m\n");
+    printf("\n\033[1;34m========== æ¼”ç¤ºç»“æŸ ==========\033[0m\n");
 
-    // ÔİÍ£ÈÃ´°¿Ú²»ÉÁÍË£¨Dev-C++ ±Ø±¸£©
-    printf("\n°´»Ø³µ¼üÍË³ö³ÌĞò...");
+    // æš‚åœè®©çª—å£ä¸é—ªé€€ï¼ˆDev-C++ å¿…å¤‡ï¼‰
+    printf("\næŒ‰å›è½¦é”®é€€å‡ºç¨‹åº...");
     getchar();
 
     return 0;
