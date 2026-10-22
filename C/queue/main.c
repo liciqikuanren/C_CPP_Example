@@ -1,10 +1,18 @@
 #include <stdio.h>
 #include "queue.h"
 
+#define QUEUE_CAPACITY 20
 
 int main() {
-    uint8_t queue_memory[20];
-    Queue_Struct* queue = queue_create(queue_memory, sizeof(queue_memory));
+    // 静态内存版：缓冲区由用户提供，需按 queue_alignment() 对齐
+    static uint8_t storage[64]; // 64 字节，天然对齐，需 >= queue_sizeof(QUEUE_CAPACITY)
+
+    if (sizeof(storage) < queue_sizeof(QUEUE_CAPACITY)) {
+        printf("Storage too small\n");
+        return -1;
+    }
+
+    Queue_Struct* queue = queue_create((uint8_t*)storage, QUEUE_CAPACITY);
     if (queue == NULL) {
         printf("Failed to create queue\n");
         return -1;
@@ -12,10 +20,21 @@ int main() {
 
     uint8_t value_push[] = "Hello_World!!";
     uint32_t size = (uint32_t)(sizeof(value_push) / sizeof(value_push[0])) - 1; // 不含结尾 '\0'
-    queue_push(queue, value_push, size);
-    uint8_t value_pop[20] = {0};
-    queue_pop(queue, value_pop, size);
+
+    if (queue_push(queue, value_push, size) != 0) {
+        printf("queue_push failed\n");
+        return -1;
+    }
+
+    uint8_t value_pop[QUEUE_CAPACITY] = {0};
+    if (queue_pop(queue, value_pop, size) != 0) {
+        printf("queue_pop failed\n");
+        return -1;
+    }
+
     printf("Popped value: %s\n", (char*)value_pop);
+    queue_destroy(queue);
+
     printf("Queue implementation in C\n");
     return 0;
 }

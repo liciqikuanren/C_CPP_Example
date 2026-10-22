@@ -19,8 +19,8 @@ add_executable(queue_demo
 target_link_libraries(queue_demo PRIVATE queue)
 
 if(MSVC)
-    target_compile_options(queue PRIVATE /W4)
-    target_compile_options(queue_demo PRIVATE /W4)
+    target_compile_options(queue PRIVATE /W4 /utf-8)
+    target_compile_options(queue_demo PRIVATE /W4 /utf-8)
 else()
     target_compile_options(queue PRIVATE -Wall -Wextra)
     target_compile_options(queue_demo PRIVATE -Wall -Wextra)

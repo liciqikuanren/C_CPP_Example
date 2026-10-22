@@ -9,33 +9,53 @@ struct __Queue_Struct
     uint32_t capacity;
 };
 
+typedef struct
+{
+    char _c;
+    Queue_Struct _q;
+} Queue_AlignProbe;
+
+#define QUEUE_ALIGNMENT ((size_t)offsetof(Queue_AlignProbe, _q))
+
+
+size_t queue_sizeof(uint32_t capacity)
+{
+    return sizeof(Queue_Struct) + (size_t)capacity;
+}
+
+size_t queue_alignment(void)
+{
+    return QUEUE_ALIGNMENT;
+}
 
 Queue_Struct* queue_create(uint8_t* memory, uint32_t capacity)
 {
-    Queue_Struct* queue = memory;
-    if (!queue)
+    if (memory == NULL || capacity == 0)
     {
-        return NULL; // Memory allocation failed
+        return NULL;
     }
 
-    queue->data = (uint8_t*)malloc(capacity * sizeof(uint8_t));
-    if (!queue->data)
+    if ((uintptr_t)memory % QUEUE_ALIGNMENT != 0)
     {
-        free(queue);
-        return NULL; // Memory allocation failed
+        return NULL; // 缓冲区未按 Queue_Struct 要求对齐
     }
 
+    Queue_Struct* queue = (Queue_Struct*)memory;
+    queue->data = memory + sizeof(Queue_Struct);
     queue->head = 0;
     queue->tail = 0;
     queue->capacity = capacity;
 
     return queue;
-
 }
 
 void queue_destroy(Queue_Struct* queue)
 {
-    free(queue->data);
+    if (!queue)
+    {
+        return;
+    }
+
     queue->data = NULL;
     queue->head = 0;
     queue->tail = 0;
@@ -44,15 +64,14 @@ void queue_destroy(Queue_Struct* queue)
 
 int queue_push(Queue_Struct* queue, uint8_t value[], uint32_t size)
 {
-
-    if (size > (uint32_t)(queue->capacity - queue->tail))
+    if (!queue || !value)
     {
-        return -1; // Not enough space to push
+        return -1;
     }
 
-    if (queue->tail == queue->capacity)
+    if (size > queue->capacity - queue->tail)
     {
-        return -1; // Queue is full
+        return -1; // Not enough space to push
     }
 
     for (uint32_t i = 0; i < size; i++)
@@ -67,14 +86,14 @@ int queue_push(Queue_Struct* queue, uint8_t value[], uint32_t size)
 
 int queue_pop(Queue_Struct* queue, uint8_t value[], uint32_t size)
 {
-    if (size > (uint32_t)(queue->tail - queue->head))
+    if (!queue || !value)
     {
-        return -1; // Not enough elements to pop
+        return -1;
     }
 
-    if (queue->head == queue->tail)
+    if (size > queue->tail - queue->head)
     {
-        return -1; // Queue is empty
+        return -1; // Not enough elements to pop
     }
 
     for (uint32_t i = 0; i < size; i++)
