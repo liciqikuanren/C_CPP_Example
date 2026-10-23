@@ -25,3 +25,8 @@ else()
     target_compile_options(queue PRIVATE -Wall -Wextra)
     target_compile_options(queue_demo PRIVATE -Wall -Wextra)
 endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()

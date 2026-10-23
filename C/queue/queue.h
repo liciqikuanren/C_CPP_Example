@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
+typedef int (*queue_destroy_callback)(uint8_t* data, uint32_t length);
 
 /// @brief 队列结构体（不透明类型，定义在 queue.c 中）
 typedef struct __Queue_Struct Queue_Struct;
@@ -33,7 +34,7 @@ void queue_destroy(Queue_Struct* queue);
 /// @param value 要添加的元素数组
 /// @param size 要添加的元素个数
 /// @return 返回0表示成功，返回-1表示失败
-int queue_push(Queue_Struct* queue, uint8_t value[], uint32_t size);
+int queue_push(Queue_Struct* queue, const uint8_t value[], uint32_t size);
 
 /// @brief 从队列中取出元素
 /// @param queue 队列实例
@@ -41,5 +42,12 @@ int queue_push(Queue_Struct* queue, uint8_t value[], uint32_t size);
 /// @param size 要取出的元素个数
 /// @return 返回0表示成功，返回-1表示失败
 int queue_pop(Queue_Struct* queue, uint8_t value[], uint32_t size);
+
+/// @brief 注册队列销毁回调函数
+///        当队列被销毁时，会调用该回调函数，传入队列中的数据和数据长度，供调用方进行清理操作
+/// @param queue 队列实例
+/// @param callback 回调函数指针
+/// @return 返回0表示成功，返回-1表示失败
+int queue_register_destroy_callback(Queue_Struct* queue, queue_destroy_callback callback);
 
 #endif

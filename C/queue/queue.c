@@ -7,6 +7,7 @@ struct __Queue_Struct
     uint32_t head;
     uint32_t tail;
     uint32_t capacity;
+    queue_destroy_callback destroy_callback;
 };
 
 typedef struct
@@ -60,9 +61,13 @@ void queue_destroy(Queue_Struct* queue)
     queue->head = 0;
     queue->tail = 0;
     queue->capacity = 0;
+    if(queue->destroy_callback!= NULL)
+    {
+        queue->destroy_callback(queue->data, queue->tail - queue->head);
+    }
 }
 
-int queue_push(Queue_Struct* queue, uint8_t value[], uint32_t size)
+int queue_push(Queue_Struct* queue, const uint8_t value[], uint32_t size)
 {
     if (!queue || !value)
     {
@@ -103,4 +108,17 @@ int queue_pop(Queue_Struct* queue, uint8_t value[], uint32_t size)
     queue->head += size;
 
     return 0; // Success
+}
+
+
+
+int queue_register_destroy_callback(Queue_Struct* queue, queue_destroy_callback callback)
+{
+    if (!queue)
+    {
+        return -1;
+    }
+
+    queue->destroy_callback = callback;
+    return 0;
 }
