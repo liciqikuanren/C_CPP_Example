@@ -1,4 +1,4 @@
-#ifndef EVENT_BUS_H
+﻿#ifndef EVENT_BUS_H
 #define EVENT_BUS_H
 
 #include <stdint.h>
@@ -15,17 +15,13 @@ extern "C" {
 #endif
 
 #ifndef EVENT_QUEUE_LEN
-#define EVENT_QUEUE_LEN     8u              /* 引擎事件总队列深度（每个引擎实例一份） */
+#define EVENT_QUEUE_LEN     8u              /* 引擎事件总队列深度（全局唯一一份） */
 #endif
 
 #ifndef SUB_QUEUE_LEN
 #define SUB_QUEUE_LEN       1u              /* 订阅者缓存队列深度，默认 1：
                                              * 每轮扫描入队后立即出队回调，
                                              * 仅保留最新事件，内存占用最小 */
-#endif
-
-#ifndef EVENT_BUS_MAX_PUBS
-#define EVENT_BUS_MAX_PUBS  8u              /* 单个引擎最多挂载的发布者数量 */
 #endif
 
 /* 临界区钩子：多线程/中断环境下自行填入关中断或加锁，默认空操作 */
@@ -37,14 +33,14 @@ extern "C" {
 #endif
 /* ------------------------------------------------------------------------ */
 
-/* 事件枚举 ID：发布者用它标识自己，订阅者用它倒推发布者 */
+/* 事件枚举 ID：与发布者一一对应，直接用作发布者查表数组的下标 */
 typedef enum {
     EVENT_ID_NONE = 0,                      /* 空事件 */
     EVENT_ID_KEY,                           /* 按键事件 */
     EVENT_ID_TIMER,                         /* 定时器事件 */
     EVENT_ID_UART,                          /* 串口数据到达 */
     EVENT_ID_SENSOR,                        /* 传感器采样 */
-    EVENT_ID_MAX                            /* 事件数量上界 */
+    EVENT_ID_MAX                            /* 事件数量上界（即查表数组大小） */
 } event_id_t;
 
 #define EVENT_ID_ANY    ((event_id_t)0xFF)  /* 特殊值：订阅全部事件（挂到总线通配链表） */
@@ -59,13 +55,10 @@ typedef struct event {
 /* 事件处理回调：引擎从订阅者缓存取出事件后调用 */
 typedef void (*event_handler_t)(const event_t *ev);
 
-/* 事件总线引擎（允许多实例，实例由调用方分配） */
-typedef struct event_bus event_bus_t;
-
 /* ==================== 订阅者 ====================
  * 自身维护一个缓存队列，用于暂存分发过来的事件；
  * 通过 next 指针串联成单向链表，供引擎遍历；
- * 订阅动作由订阅者发起：传入事件 ID，由所在引擎倒推出对应发布者，
+ * 订阅动作由订阅者发起：传入事件 ID，由总线按 ID 直接查表取发布者，
  * 再把本订阅者挂入该发布者的订阅者链表。
  */
 typedef struct subscriber {
@@ -80,61 +73,49 @@ typedef struct subscriber {
 } subscriber_t;
 
 /* ==================== 发布者 ====================
- * 发布者不自持事件队列，只保留：
- *   枚举 ID（用于被事件倒推定位）、订阅者链表首地址（用于遍历订阅者）、
- *   所属引擎指针（挂载时写入，发布事件时据此投递到该引擎的总队列）。
+ * 发布者与事件 ID 一一对应（ID 即查表下标），不自持事件队列，只保留：
+ *   枚举 ID（查表下标）、订阅者链表首地址（用于遍历订阅者）。
+ * 事件发布时统一进入总线引擎的总队列。
  */
 typedef struct publisher {
-    event_id_t          id;                 /* 枚举 ID，订阅者据此倒推本发布者 */
+    event_id_t          id;                 /* 枚举 ID，作总线查表数组的下标 */
 
     struct subscriber  *subs;               /* 订阅者链表首地址，遍历起点 */
-
-    event_bus_t        *bus;                /* 所属引擎（挂载时写入，post 的投递目标） */
 } publisher_t;
 
-/* ==================== 事件总线（引擎，允许多实例） ====================
- * 每个实例独立持有：全局唯一的事件总队列、发布者表（供事件 ID 倒推）、
- * 通配订阅者链表。实例由调用方分配（建议 static/全局，符合静态内存约束）。
- * 由 event_bus_process(bus) 驱动事件分发。
+/* ==================== 事件总线引擎（全局唯一单例） ====================
+ * 一个工程只有一个事件总线：引擎结构体与实例（文件内 static g_bus）
+ * 隐藏在 event_bus.c 内部，对外只暴露 event_bus_xxx() 系列函数，无实例参数。
+ * 引擎持有：事件 ID -> 发布者 直接查表数组、事件总队列、通配订阅者链表；
+ * 由 event_bus_process() 驱动事件分发。
  */
-struct event_bus {
-    publisher_t        *pubs[EVENT_BUS_MAX_PUBS];  /* 发布者表（事件 ID -> 发布者 倒推） */
-    uint8_t             pub_cnt;            /* 已挂载的发布者数量 */
-    subscriber_t       *any_subs;           /* 通配（EVENT_ID_ANY）订阅者链表首地址 */
 
-    event_t             queue[EVENT_QUEUE_LEN];   /* 引擎事件总队列 */
-    uint8_t             head;               /* 队头下标（出队方向） */
-    uint8_t             tail;               /* 队尾下标（入队方向） */
-    uint8_t             count;              /* 队列中事件个数 */
-};
+/* ---------- 引擎接口（单例，无实例参数） ---------- */
+void event_bus_init(void);                  /* 初始化引擎（清空总队列/查表数组/通配链表） */
+bool event_bus_add_publisher(publisher_t *pub);  /* 挂载发布者（ID 作下标直接写表） */
+bool event_bus_empty(void);                 /* 总队列是否为空 */
+void event_bus_process(void);               /* 运行一轮：分发 + 回调 */
 
-/* ---------- 引擎接口 ---------- */
-void event_bus_init(event_bus_t *bus);      /* 初始化引擎（清空总队列/发布者表/通配链表） */
-bool event_bus_add_publisher(event_bus_t *bus, publisher_t *pub);  /* 挂载发布者并记录归属 */
-bool event_bus_empty(const event_bus_t *bus);   /* 总队列是否为空 */
-void event_bus_process(event_bus_t *bus);   /* 运行一轮：分发 + 回调 */
-
-/* ---------- 订阅者接口（订阅动作的入口，按事件倒推发布者） ----------
+/* ---------- 订阅者接口（订阅动作的入口，按事件 ID 查表定位发布者） ----------
  * subscriber_init()        只绑定回调，不挂链；
- * subscriber_subscribe()   在指定引擎上按事件 ID 倒查发布者并挂入其链表；
- *                          传 EVENT_ID_ANY 则挂到该引擎通配链表（收所有事件）；
+ * subscriber_subscribe()   按事件 ID 直接查表取出发布者并挂入其链表（O(1)）；
+ *                          传 EVENT_ID_ANY 则挂到通配链表（收所有事件）；
  *                          重复订阅会先自动摘旧链再挂新链（一个订阅者同一时刻
  *                          只属于一条链表，next 指针唯一）；
- * subscriber_unsubscribe() 在指定引擎上按事件 ID 倒查发布者并从其链表摘除；
- *                          传 EVENT_ID_ANY 表示从该引擎所有链表全部摘除。
+ * subscriber_unsubscribe() 按事件 ID 直接查表取出发布者并从其链表摘除；
+ *                          传 EVENT_ID_ANY 表示从所有链表全部摘除。
  * 需要同时接收多类事件时，请使用多个订阅者对象，或直接用 EVENT_ID_ANY。
  */
 void subscriber_init(subscriber_t *sub, event_handler_t handler);
-bool subscriber_subscribe(event_bus_t *bus, subscriber_t *sub, event_id_t id);
-void subscriber_unsubscribe(event_bus_t *bus, subscriber_t *sub, event_id_t id);
+bool subscriber_subscribe(subscriber_t *sub, event_id_t id);
+void subscriber_unsubscribe(subscriber_t *sub, event_id_t id);
 bool subscriber_push(subscriber_t *sub, const event_t *ev);
 bool subscriber_pop(subscriber_t *sub, event_t *out);
 bool subscriber_empty(const subscriber_t *sub);
 
 /* ---------- 发布者接口 ----------
  * 发布事件只需给出发布者实例、数据、数据长度：
- * 事件 ID 由发布者自身的枚举 ID 自动填入；
- * 事件投递到发布者所属引擎（挂载时记录）的总队列，无需显式传引擎。
+ * 事件 ID 由发布者自身的枚举 ID 自动填入，事件进入总线总队列。
  * publisher_subscribe/unsubscribe 为底层挂链/摘链原语，
  * 一般业务代码请使用 subscriber_subscribe/subscriber_unsubscribe。
  */
