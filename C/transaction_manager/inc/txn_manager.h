@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-/* 槽位表大小（固定数组，编译期确定，可在编译选项中覆盖） */
+/* 每张槽位表的默认大小（单实例默认表用，实例版表大小由自己指定） */
 #ifndef TXN_MAX_SLOTS
 #define TXN_MAX_SLOTS 8u
 #endif
@@ -26,7 +26,7 @@ typedef enum {
     TXN_WAIT_RESP_BAD,    /* 收到应答但 match 校验失败 */
     TXN_WAIT_TIMEOUT,     /* 超时且重发次数用尽 */
     TXN_WAIT_TX_ERR,      /* 发送请求失败，未进入等待 */
-    TXN_WAIT_CANCELLED    /* 被 txn_abort() 取消 */
+    TXN_WAIT_CANCELLED    /* 被 txn_abort_on() 取消 */
 } txn_wait_ret_t;
 
 /* 事务最终结果：成功与失败都通过同一个回调带回 */
@@ -59,29 +59,60 @@ typedef struct {
     uint8_t max_retry;      /* 超时后的重发次数，0 = 只发一次 */
 } txn_req_cfg_t;
 
-/* 初始化，清空整个槽位表 */
-int txn_init(void);
+/* 单个事务槽位：由使用方分配（数组），字段视为内部实现细节，不要直接修改 */
+typedef struct {
+    uint8_t used;
+    uint8_t retry;
+    int request_ret;
+    uint32_t deadline;
+    txn_req_cfg_t cfg;
+} txn_slot_t;
+
+/* 管理器实例：一个总线/协议组件一个，内部只保存调用方提供的表 */
+typedef struct {
+    txn_slot_t *slots;
+    unsigned capacity;
+} txn_t;
+
+/* ==================================================================
+ * 实例版 API（组件化用法）：每个协议组件自带 txn_t + 槽位表，互不干扰
+ * ================================================================== */
+
+/* 初始化实例：绑定槽位表并清零。失败返回 -1（参数非法） */
+int txn_init_on(txn_t *t, txn_slot_t *slots, unsigned capacity);
 
 /* 提交事务：占用空闲槽位并立即发送请求。
  * 返回 >=0 为事务句柄；-1 表满；-2 同 cmd_id 仍在等待；-3 发送失败；-4 参数非法。
  * 注意：-1/-2/-4 没有占用槽位，不会触发回调；-3 会触发回调(wait_ret=TX_ERR) */
-int txn_submit(const txn_req_cfg_t *cfg);
+int txn_submit_on(txn_t *t, const txn_req_cfg_t *cfg);
 
 /* 收到一帧数据时调用（主循环或中断均可），内部按 cmd_id 配对分发。
  * 匹配成功、校验失败都会触发统一回调。
  * 返回 1 = 已消费该帧，0 = 没有匹配的事务 */
-int txn_on_rx(const void *rx, size_t len);
+int txn_on_rx_on(txn_t *t, const void *rx, size_t len);
 
 /* 主循环周期调用：处理超时与自动重发 */
-void txn_poll(void);
+void txn_poll_on(txn_t *t);
 
-/* 主动取消事务，会触发统一回调(wait_ret=CANCELLED)，返回 1 表示确实取消了一个事务 */
-int txn_abort(int handle);
+/* 主动取消事务，会触发统一回调(wait_ret=CANCELLED)，返回 1 表示确实取消了事务 */
+int txn_abort_on(txn_t *t, int handle);
 
 /* 当前等待中的事务数 */
+int txn_pending_count_on(const txn_t *t);
+
+/* ==================================================================
+ * 默认实例版 API（单总线便捷用法）：等价于在内部默认实例上操作，
+ * 即不带 _on 的老接口，单管理器场景可直接用
+ * ================================================================== */
+
+int txn_init(void);
+int txn_submit(const txn_req_cfg_t *cfg);
+int txn_on_rx(const void *rx, size_t len);
+void txn_poll(void);
+int txn_abort(int handle);
 int txn_pending_count(void);
 
-/* 等待结果转字符串（便于打印日志） */
+/* 等待结果转字符串（便于打印日志），与实例无关 */
 const char *txn_wait_ret_str(txn_wait_ret_t wait_ret);
 
 #ifdef __cplusplus

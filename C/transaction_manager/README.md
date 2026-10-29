@@ -6,7 +6,7 @@
 
 ## 特性
 
-- 固定大小槽位表（编译期确定 `TXN_MAX_SLOTS`），**无 malloc、无内存碎片**，适合裸机
+- 固定大小槽位表（调用方分配数组，大小自己定，默认表 `TXN_MAX_SLOTS`），**无 malloc、无内存碎片**，适合裸机
 - 按**命令ID/序列号自动配对**应答，支持多事务并发、应答乱序到达
 - 每个事务独立的**超时 + 可配置自动重发**
 - **统一回调**：成功/失败走同一个回调，回调参数带回上下文、发送函数返回值、等待最终结果
@@ -14,13 +14,14 @@
 - 回调内可安全地**链式提交**下一个事务（先释放槽位再回调）
 - 时间用无符号减法比较，兼容系统 tick 计数器回绕
 - 临界区 `TXN_LOCK/UNLOCK` 可配置，默认空实现（单线程裸机够用）
+- **多实例**：每个总线/协议组件自带 `txn_t` + 槽位表，相互完全隔离，可作为私有组件嵌入协议栈；单管理器场景也有不带 `_on` 的默认实例老接口
 
 ## 目录结构
 
 ```
 transaction_manager/
 ├── CMakeLists.txt
-├── main.c                 # 演示程序（模拟主机-从机，3 个场景）
+├── main.c                 # 演示程序（模拟主机-从机，4 个场景）
 ├── inc/
 │   ├── txn_manager.h      # 管理器接口
 │   └── txn_port.h         # 移植层：时间/临界区
@@ -67,7 +68,7 @@ uint32_t txn_port_now_ms(void)
 #define TXN_UNLOCK() __enable_irq()
 ```
 
-3. **（可选）配置槽位数量**（默认 8，编译选项覆盖）：
+3. **（可选）配置默认实例的表大小**（`TXN_MAX_SLOTS` 默认 8；实例版的表大小在 `txn_init_on()` 时自己指定，不受它影响）：
 
 ```cmake
 target_compile_definitions(txn_manager PUBLIC TXN_MAX_SLOTS=16)
@@ -96,6 +97,55 @@ int main(void)
     }
 }
 ```
+
+## 作为组件嵌入（多实例）
+
+所有 API 都有带实例参数的 `_on` 版本：`txn_init_on / txn_submit_on / txn_on_rx_on /
+txn_poll_on / txn_abort_on / txn_pending_count_on`，第一个参数都是 `txn_t *`。
+一个总线/协议组件 = 一个 `txn_t` + 一张自己分配的槽位表，互相隔离（同 cmd_id 查重、
+pending 计数都只在实例内部），适合把管理器**私有地嵌进协议组件**，对上层隐藏：
+
+```c
+/* modbus_master.c —— 事务管理器作为内部组件，外部看不到 txn_* */
+static txn_slot_t mb_slots[2];          /* 表大小自己定，一问一答只要 1 也行 */
+static txn_t      mb_txn;
+
+void modbus_master_init(void)
+{
+    txn_init_on(&mb_txn, mb_slots, 2);
+}
+
+int modbus_read_holding(uint8_t slave, uint16_t reg)
+{
+    /* request = 组 PDU+CRC 发 UART；match = 校验从站地址/功能码/CRC */
+    txn_req_cfg_t cfg = {
+        .cmd_id     = (uint16_t)(slave << 8 | 0x03), /* 从站+功能码 */
+        .request    = mb_request,
+        .match      = mb_match,
+        .notify     = mb_notify,     /* 内部翻译后转交应用回调 */
+        .ctx        = &job,
+        .timeout_ms = 200,
+        .max_retry  = 0,             /* 写功能码建议不重发，防重复执行 */
+    };
+    return txn_submit_on(&mb_txn, &cfg);
+}
+
+/* 串口组帧完成（RTU 模式 3.5T 定界好一帧）的入口，可在中断里调 */
+void modbus_master_rx(const uint8_t *frame, size_t len)
+{
+    txn_on_rx_on(&mb_txn, frame, len);
+}
+
+/* 挂到 1ms 周期任务，驱动超时与重发 */
+void modbus_master_tick(void)
+{
+    txn_poll_on(&mb_txn);
+}
+```
+
+多总线（Modbus + 私有串口 + CAN）各建各的实例即可，cmd_id 空间互不冲突。
+不带 `_on` 的老接口（`txn_submit(cfg)` 等）操作的是内部**默认实例**（大小 `TXN_MAX_SLOTS`），
+只有一个管理器时用它最省事，老代码零改动。
 
 ## 提交一个事务
 
@@ -164,27 +214,47 @@ int handle = txn_submit(&cfg);
 | `TXN_WAIT_RESP_BAD` | 收到应答但 match 校验失败（坏帧在 `rx/len` 里） |
 | `TXN_WAIT_TIMEOUT` | 超时且重发次数用尽 |
 | `TXN_WAIT_TX_ERR` | `request()` 返回错误，未进入等待（错误码在 `request_ret`） |
-| `TXN_WAIT_CANCELLED` | 被 `txn_abort()` 主动取消 |
+| `TXN_WAIT_CANCELLED` | 被 `txn_abort_on()` 主动取消 |
 
 ## API 一览
 
+### 实例版（组件化用法）
+
 | 函数 | 说明 |
 |---|---|
-| `txn_init()` | 初始化，清空槽位表，上电调一次 |
-| `txn_submit(cfg)` | 提交事务，立即发送；返回句柄或负值错误码 |
-| `txn_on_rx(rx, len)` | 收到一帧时调用，按 cmd_id 配对分发；返回 1=已消费该帧 |
-| `txn_poll()` | 主循环周期调用，驱动超时与自动重发 |
-| `txn_abort(handle)` | 主动取消，回调 `CANCELLED`；返回 1=确实取消了事务 |
-| `txn_pending_count()` | 当前等待中的事务数 |
-| `txn_wait_ret_str()` | 等待结果转字符串，便于打日志 |
+| `txn_init_on(t, slots, capacity)` | 初始化实例：绑定调用方分配的槽位表并清零 |
+| `txn_submit_on(t, cfg)` | 提交事务，立即发送；返回句柄或负值错误码 |
+| `txn_on_rx_on(t, rx, len)` | 收到一帧时调用，按 cmd_id 配对分发；返回 1=已消费该帧 |
+| `txn_poll_on(t)` | 主循环周期调用，驱动超时与自动重发 |
+| `txn_abort_on(t, handle)` | 主动取消，回调 `CANCELLED`；返回 1=确实取消了事务 |
+| `txn_pending_count_on(t)` | 该实例当前等待中的事务数 |
+
+### 默认实例版（单管理器便捷用法）
+
+等价于在内部默认实例（大小 `TXN_MAX_SLOTS`）上操作，老接口零改动：
+
+| 函数 | 说明 |
+|---|---|
+| `txn_init()` | 初始化默认实例，上电调一次 |
+| `txn_submit(cfg)` | 提交事务；返回句柄或负值错误码 |
+| `txn_on_rx(rx, len)` | 收到一帧时调用，配对分发 |
+| `txn_poll()` | 周期驱动超时与自动重发 |
+| `txn_abort(handle)` | 主动取消 |
+| `txn_pending_count()` | 默认实例当前等待中的事务数 |
+| `txn_wait_ret_str()` | 等待结果转字符串，与实例无关 |
+
+`txn_submit` 返回值（两版相同）：`>=0` 句柄；`-1` 表满；`-2` 同 cmd_id 仍在等待；
+`-3` 发送失败（会回调）；`-4` 参数非法。
 
 ## 演示程序
 
-`main.c` 用虚拟时间模拟了一个主机-从机环境，覆盖 3 个典型场景：
+`main.c` 用虚拟时间模拟了一个主机-从机环境，覆盖 4 个典型场景：
 
 1. **应答慢但未超时**：55ms 才回，100ms 超时 → 成功，只发一次
 2. **两命令并发、应答乱序**：0x11 后发先回，0x10 先发后回 → 依然各自配对正确
 3. **从机永不应答**：超时 20ms、重发 2 次 → 共发 3 次，回调 `TIMEOUT`
+4. **默认实例兼容**：场景 1~3 走实例版 `txn_*_on()`，场景 4 走老接口 `txn_*()`,
+   并验证两个实例的槽位表相互独立
 
 编译运行：
 
@@ -199,10 +269,11 @@ Linux/macOS 下把路径换成 `build/transaction_manager_demo` 即可（`ctest`
 
 ## 注意事项
 
-- **同一 `cmd_id` 串行**：一个命令还在等待时不允许再次提交（返回 -2），否则应答无法区分归属；不同 `cmd_id` 可以任意并发
+- **同 cmd_id 串行只在实例内**：一个命令还在等待时不允许再次提交（返回 -2），否则应答无法区分归属；不同 `cmd_id` 可以任意并发，**不同实例之间完全隔离**（各自的表、查重、计数）
 - **`match` 返回值决定走向**：`MORE` = 不是我的继续等，`OK` = 完成，`ABORT` = 判失败（坏帧细节在回调里）
 - **`match` 可为 NULL**：任意帧都算应答，只适合总线上没有其他流量的场景
-- **回调内可以链式提交**：管理器先释放槽位再调回调，回调里直接 `txn_submit()` 下一条是安全的
-- **中断里调 `txn_on_rx()`** 必须配置 `TXN_LOCK/UNLOCK`；`txn_poll()`、`txn_submit()` 建议放主循环
-- **`txn_poll()` 调用频率**决定超时判断精度，建议 1~10ms 一次；两次调用间隔不要超过 `timeout_ms`
+- **回调内可以链式提交**：管理器先释放槽位再调回调，回调里直接 `txn_submit_on()` 下一条是安全的
+- **中断里调 `txn_on_rx_on()`** 必须配置 `TXN_LOCK/UNLOCK`；`txn_poll_on()`、`txn_submit_on()` 建议放主循环
+- **`txn_poll_on()` 调用频率**决定超时判断精度，建议 1~10ms 一次；两次调用间隔不要超过 `timeout_ms`
 - **提交失败（-1/-2/-4）不占槽位、不回调**，只有真正占了槽位的事务才保证恰好回调一次
+- **`txn_t` 的字段不要直接改**，槽位表内容也视为内部实现，只通过 API 操作

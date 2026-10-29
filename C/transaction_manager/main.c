@@ -2,17 +2,21 @@
  * 事务管理器演示（模拟主机-从机请求应答）
  *
  * 流程：
- *   1. 应用层 txn_submit() 提交配置（命令ID + 发送函数 + 匹配函数 + 统一回调 + 超时重发）
- *   2. 主循环里周期调 txn_poll() 处理超时与自动重发
- *   3. 收到从机应答时调 txn_on_rx()，按命令ID自动配对
+ *   1. 应用层 txn_submit_on() 提交配置（命令ID + 发送函数 + 匹配函数 + 统一回调 + 超时重发）
+ *   2. 主循环里周期调 txn_poll_on() 处理超时与自动重发
+ *   3. 收到从机应答时调 txn_on_rx_on()，按命令ID自动配对
  *   4. 无论成功失败，都走同一个回调 notify：
  *      用 result->ctx 区分是哪个事务，用 result->wait_ret 看等待的最终结果，
  *      用 result->request_ret 看发送请求函数的返回值
  *
- * 三个场景：
+ * 本 demo 用实例版 API（组件化用法：一张自己的槽位表 s_bus），
+ * 场景4 演示不带 _on 的默认实例兼容写法。
+ *
+ * 场景：
  *   场景1：从机应答慢，但没超时 → 成功
  *   场景2：两个命令并发，应答乱序到达 → 依然配对正确
  *   场景3：从机不应答 → 自动重发 2 次后超时失败
+ *   场景4：默认实例（老接口）用法兼容
  */
 #include "txn_manager.h"
 #include "txn_port.h"
@@ -26,6 +30,10 @@
 
 static uint32_t s_now; /* 模拟毫秒节拍 */
 static int s_fail;
+
+/* 实例版用法：本 demo 模拟一条总线，自带一张槽位表（组件化形态） */
+static txn_slot_t s_bus_slots[TXN_MAX_SLOTS];
+static txn_t s_bus;
 
 /* 源文件是 UTF-8，Windows 控制台默认 GBK(936) 会显示乱码，
  * 这里把控制台输出代码页切到 UTF-8 */
@@ -141,8 +149,8 @@ static void mock_notify(const txn_result_t *result)
     }
 }
 
-/* 组装配置并提交，返回事务句柄 */
-static int submit_dev(mock_dev_t *dev, uint32_t timeout_ms, uint8_t max_retry)
+/* 组装配置并提交到指定实例，返回事务句柄 */
+static int submit_dev(txn_t *t, mock_dev_t *dev, uint32_t timeout_ms, uint8_t max_retry)
 {
     txn_req_cfg_t cfg;
 
@@ -154,30 +162,30 @@ static int submit_dev(mock_dev_t *dev, uint32_t timeout_ms, uint8_t max_retry)
     cfg.ctx = dev;
     cfg.timeout_ms = timeout_ms;
     cfg.max_retry = max_retry;
-    return txn_submit(&cfg);
+    return txn_submit_on(t, &cfg);
 }
 
 /* ---- 模拟主循环 ------------------------------------------------ */
 
 /* 投递已到时间的从机应答 */
-static void deliver_due(void)
+static void deliver_due(txn_t *t)
 {
     for (unsigned i = 0; i < 4u; i++) {
         if (s_resp[i].used && (int32_t)(s_now - s_resp[i].arrive) >= 0) {
-            txn_on_rx(s_resp[i].buf, 3);
+            txn_on_rx_on(t, s_resp[i].buf, 3);
             s_resp[i].used = 0;
         }
     }
 }
 
 /* 推进虚拟时间，相当于主循环跑 ms 毫秒 */
-static void sim_run(uint32_t ms)
+static void sim_run(txn_t *t, uint32_t ms)
 {
     uint32_t end = s_now + ms;
     while ((int32_t)(s_now - end) < 0) {
         s_now += 5;
-        deliver_due();
-        txn_poll();
+        deliver_due(t);
+        txn_poll_on(t);
     }
 }
 
@@ -186,7 +194,7 @@ static void sim_run(uint32_t ms)
 int main(void)
 {
     console_utf8();
-    txn_init();
+    txn_init_on(&s_bus, s_bus_slots, TXN_MAX_SLOTS);
 
     printf("== 场景1：应答慢但未超时 ==\n");
     {
@@ -196,13 +204,13 @@ int main(void)
         dev.latency = 55; /* 应答要 55ms，超时设 100ms */
         dev.wait_ret = -1;
 
-        CHECK(submit_dev(&dev, 100, 0) >= 0, "提交成功");
-        sim_run(120);
+        CHECK(submit_dev(&s_bus, &dev, 100, 0) >= 0, "提交成功");
+        sim_run(&s_bus, 120);
         CHECK(dev.done, "收到应答，事务完成");
         CHECK(dev.wait_ret == TXN_WAIT_RESP_OK, "回调 wait_ret = RESP_OK");
         CHECK(dev.request_ret == 0, "回调 request_ret = 0（发送成功）");
         CHECK(dev.send_count == 1, "只发送了一次");
-        CHECK(txn_pending_count() == 0, "槽位已释放");
+        CHECK(txn_pending_count_on(&s_bus) == 0, "槽位已释放");
     }
 
     printf("== 场景2：两个命令并发，应答乱序 ==\n");
@@ -218,10 +226,10 @@ int main(void)
         b.wait_ret = -1;
         s_done_num = 0;
 
-        CHECK(submit_dev(&a, 100, 0) >= 0, "命令 0x10 提交成功");
-        CHECK(submit_dev(&b, 100, 0) >= 0, "命令 0x11 提交成功");
-        CHECK(txn_pending_count() == 2, "两个事务同时等待中");
-        sim_run(120);
+        CHECK(submit_dev(&s_bus, &a, 100, 0) >= 0, "命令 0x10 提交成功");
+        CHECK(submit_dev(&s_bus, &b, 100, 0) >= 0, "命令 0x11 提交成功");
+        CHECK(txn_pending_count_on(&s_bus) == 2, "两个事务同时等待中");
+        sim_run(&s_bus, 120);
         CHECK(a.done && b.done, "两个事务都完成");
         CHECK(s_done_num == 2 && s_done_order[0] == 0x0011 && s_done_order[1] == 0x0010,
               "乱序到达仍按命令ID配对正确");
@@ -235,14 +243,42 @@ int main(void)
         dev.silent = 1; /* 永不应答 */
         dev.wait_ret = -1;
 
-        CHECK(submit_dev(&dev, 20, 2) >= 0, "提交成功");
-        sim_run(100);
+        CHECK(submit_dev(&s_bus, &dev, 20, 2) >= 0, "提交成功");
+        sim_run(&s_bus, 100);
         CHECK(dev.wait_ret == TXN_WAIT_TIMEOUT, "回调 wait_ret = TIMEOUT");
         CHECK(dev.request_ret == 0, "发送本身成功，只是没人应答");
         CHECK(dev.retry == 2, "回调带回重发次数 2");
         CHECK(dev.send_count == 3, "首发 + 重发2次 = 共3次");
         CHECK(!dev.done, "事务未完成");
-        CHECK(txn_pending_count() == 0, "槽位已释放");
+        CHECK(txn_pending_count_on(&s_bus) == 0, "槽位已释放");
+    }
+
+    printf("== 场景4：默认实例（不带 _on 的老接口） ==\n");
+    {
+        mock_dev_t dev;
+        memset(&dev, 0, sizeof(dev));
+        dev.cmd_id = 0x0003;
+        dev.silent = 1;
+        dev.wait_ret = -1;
+
+        /* 下面这组是默认实例 API，单管理器场景可直接这么写 */
+        txn_init();
+        txn_req_cfg_t cfg;
+        memset(&cfg, 0, sizeof(cfg));
+        cfg.cmd_id = dev.cmd_id;
+        cfg.request = mock_request;
+        cfg.match = mock_match;
+        cfg.notify = mock_notify;
+        cfg.ctx = &dev;
+        cfg.timeout_ms = 500;
+
+        int h = txn_submit(&cfg);
+        CHECK(h >= 0, "默认实例提交成功");
+        CHECK(txn_pending_count() == 1, "默认实例表与 s_bus 相互独立");
+        CHECK(txn_pending_count_on(&s_bus) == 0, "s_bus 不受默认实例影响");
+        CHECK(txn_abort(h) == 1, "默认实例取消成功");
+        CHECK(dev.wait_ret == TXN_WAIT_CANCELLED, "回调 wait_ret = CANCELLED");
+        CHECK(txn_pending_count() == 0, "默认实例槽位已释放");
     }
 
     printf("\n%s（%d 个失败）\n", s_fail ? "结果：FAILED" : "结果：ALL PASSED", s_fail);
