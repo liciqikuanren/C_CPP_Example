@@ -1,0 +1,88 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.3.6 Chrome/140.0.7339.249 Electron/38.8.0 Safari/537.36" version="29.3.6">
+  <diagram name="第 1 页" id="Wt8QyCLoCj3caOE1Wsx-">
+    <mxGraphModel dx="1426" dy="849" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-3" edge="1" parent="1" source="sTU2ajb9nxnGQAY8uSjT-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="sTU2ajb9nxnGQAY8uSjT-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-7" connectable="0" parent="sTU2ajb9nxnGQAY8uSjT-3" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Text" vertex="1">
+          <mxGeometry relative="1" x="-0.0933" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-8" connectable="0" parent="sTU2ajb9nxnGQAY8uSjT-3" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="scanf发送开始命令" vertex="1">
+          <mxGeometry relative="1" x="-0.0533" y="-1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="IDLE" vertex="1">
+          <mxGeometry height="60" width="120" x="290" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-5" edge="1" parent="1" source="sTU2ajb9nxnGQAY8uSjT-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="sTU2ajb9nxnGQAY8uSjT-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-12" connectable="0" parent="sTU2ajb9nxnGQAY8uSjT-5" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="上升计数阈值到达10" vertex="1">
+          <mxGeometry relative="1" x="-0.4143" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-9" edge="1" parent="1" source="sTU2ajb9nxnGQAY8uSjT-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" target="sTU2ajb9nxnGQAY8uSjT-1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-10" connectable="0" parent="sTU2ajb9nxnGQAY8uSjT-9" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="scanf发送结束命令" vertex="1">
+          <mxGeometry relative="1" x="0.2933" y="-2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="UP" vertex="1">
+          <mxGeometry height="60" width="120" x="560" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-6" edge="1" parent="1" source="sTU2ajb9nxnGQAY8uSjT-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" target="sTU2ajb9nxnGQAY8uSjT-1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-11" connectable="0" parent="sTU2ajb9nxnGQAY8uSjT-6" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="下降计数阈值到达0" vertex="1">
+          <mxGeometry relative="1" x="-0.2737" y="-2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="DOWN" vertex="1">
+          <mxGeometry height="60" width="120" x="560" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-13" edge="1" parent="1" source="sTU2ajb9nxnGQAY8uSjT-2" style="curved=1;endArrow=classic;html=1;rounded=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="sTU2ajb9nxnGQAY8uSjT-2" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <Array as="points">
+              <mxPoint x="730" y="230" />
+              <mxPoint x="730" y="210" />
+              <mxPoint x="680" y="180" />
+            </Array>
+            <mxPoint x="680" y="230" as="sourcePoint" />
+            <mxPoint x="730" y="180" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-14" connectable="0" parent="sTU2ajb9nxnGQAY8uSjT-13" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="每500ms+1" vertex="1">
+          <mxGeometry relative="1" x="0.0321" y="2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-15" edge="1" parent="1" style="curved=1;endArrow=classic;html=1;rounded=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <Array as="points">
+              <mxPoint x="730" y="430" />
+              <mxPoint x="730" y="410" />
+              <mxPoint x="680" y="380" />
+            </Array>
+            <mxPoint x="680" y="440" as="sourcePoint" />
+            <mxPoint x="620" y="410" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sTU2ajb9nxnGQAY8uSjT-16" connectable="0" parent="sTU2ajb9nxnGQAY8uSjT-15" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="每500ms+1" vertex="1">
+          <mxGeometry relative="1" x="0.0321" y="2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
