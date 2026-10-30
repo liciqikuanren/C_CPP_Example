@@ -10,8 +10,10 @@ target_include_directories(state_machine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/incl
 add_executable(state_machine_demo src/main.c)
 target_link_libraries(state_machine_demo PRIVATE state_machine)
 
+find_package(Threads REQUIRED)
+
 add_executable(state_machine_counter_demo src/counter_demo.c)
-target_link_libraries(state_machine_counter_demo PRIVATE state_machine)
+target_link_libraries(state_machine_counter_demo PRIVATE state_machine Threads::Threads)
 
 if(MSVC)
     target_compile_options(state_machine PRIVATE /W4 /utf-8)

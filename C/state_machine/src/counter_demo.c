@@ -8,8 +8,8 @@
 #include <conio.h>
 #include <windows.h>
 #else
+#include <pthread.h>
 #include <sys/select.h>
-#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -201,21 +201,75 @@ static const state_machine_config_t config = {
     STATE_IDLE                                    /* 初始状态 */
 };
 
+/* 全局互斥锁，保护状态机与用户上下文在“节拍线程”和“主线程”之间的访问 */
+#ifdef _WIN32
+static CRITICAL_SECTION g_lock; /* Windows 临界区，用于线程间互斥 */
+
+/* 初始化互斥锁 */
+static void lock_init(void)
+{
+    InitializeCriticalSection(&g_lock);
+}
+
+/* 销毁互斥锁 */
+static void lock_destroy(void)
+{
+    DeleteCriticalSection(&g_lock);
+}
+
+/* 加锁 */
+static void lock_acquire(void)
+{
+    EnterCriticalSection(&g_lock);
+}
+
+/* 解锁 */
+static void lock_release(void)
+{
+    LeaveCriticalSection(&g_lock);
+}
+#else
+static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER; /* POSIX 静态初始化互斥锁 */
+
+/* 非 Windows 平台使用静态初始化的互斥锁，无需额外动作 */
+static void lock_init(void)
+{
+}
+
+/* 非 Windows 平台的互斥锁随进程结束自动释放 */
+static void lock_destroy(void)
+{
+}
+
+/* 加锁 */
+static void lock_acquire(void)
+{
+    pthread_mutex_lock(&g_lock);
+}
+
+/* 解锁 */
+static void lock_release(void)
+{
+    pthread_mutex_unlock(&g_lock);
+}
+#endif
+
 /* 投递一个事件并立即处理，若当前状态不响应则给出提示 */
 static void send_event(state_machine_t *machine, event_t event)
 {
+    lock_acquire();
+
     printf("[命令] %s\n", state_machine_event_name(machine, event));
 
     if (state_machine_post(machine, event) != 0) {
         printf("[警告] 事件队列已满，事件被丢弃\n");
-        return;
-    }
-
-    if (state_machine_process(machine) == 0) {
+    } else if (state_machine_process(machine) == 0) {
         printf("[提示] 当前状态 %s 不处理事件 %s\n",
                state_machine_state_name(machine, state_machine_current(machine)),
                state_machine_event_name(machine, event));
     }
+
+    lock_release();
 }
 
 /* 连续执行指定个数的 500ms 节拍，供脚本模式使用 */
@@ -247,56 +301,87 @@ static void run_script(state_machine_t *machine)
 }
 
 #ifdef _WIN32
-/* Windows 定时器句柄，用于产生 500ms 节拍延时 */
+/* 节拍线程控制块：由系统定时器周期性驱动状态机 */
 typedef struct {
-    HANDLE handle;          /* 可等待定时器句柄，创建失败时为 NULL */
-    unsigned interval_ms;   /* 定时周期，单位 ms */
-    unsigned long long last_ms; /* 创建失败时的软件计时基准，单位 ms */
-} demo_timer_t;
+    state_machine_t *machine; /* 被驱动的状态机 */
+    HANDLE thread;            /* 线程句柄 */
+    HANDLE stop_event;        /* 停止信号，手动复位事件 */
+    HANDLE timer;             /* 周期定时器，每 500ms 触发一次 */
+} tick_thread_t;
 
-/* 创建并启动周期定时器；创建失败则退化为基于 GetTickCount64 的软件计时 */
-static void timer_start(demo_timer_t *timer, unsigned interval_ms)
+/* 节拍线程入口：定时器到期后加锁执行状态机运行与事件处理 */
+static DWORD WINAPI tick_thread_proc(LPVOID arg)
+{
+    tick_thread_t *tick = (tick_thread_t *)arg;
+    HANDLE handles[2];
+
+    handles[0] = tick->stop_event;
+    handles[1] = tick->timer;
+
+    for (;;) {
+        DWORD result = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+
+        /* 只有定时器触发才执行节拍，收到停止信号或等待失败则退出 */
+        if (result != WAIT_OBJECT_0 + 1) {
+            break;
+        }
+
+        lock_acquire();
+        state_machine_run(tick->machine);
+        state_machine_process(tick->machine);
+        lock_release();
+    }
+
+    return 0;
+}
+
+/* 停止节拍线程并释放线程、定时器和事件句柄 */
+static void tick_thread_stop(tick_thread_t *tick)
+{
+    if (tick->stop_event != NULL) {
+        SetEvent(tick->stop_event);
+    }
+    if (tick->thread != NULL) {
+        WaitForSingleObject(tick->thread, INFINITE);
+        CloseHandle(tick->thread);
+        tick->thread = NULL;
+    }
+    if (tick->timer != NULL) {
+        CloseHandle(tick->timer);
+        tick->timer = NULL;
+    }
+    if (tick->stop_event != NULL) {
+        CloseHandle(tick->stop_event);
+        tick->stop_event = NULL;
+    }
+}
+
+/* 启动节拍线程：创建周期定时器与工作线程，成功返回 0，失败返回 -1 */
+static int tick_thread_start(tick_thread_t *tick, state_machine_t *machine, unsigned interval_ms)
 {
     LARGE_INTEGER due;
 
-    timer->interval_ms = interval_ms;
-    timer->handle = CreateWaitableTimerA(NULL, FALSE, NULL);
-    if (timer->handle == NULL) {
-        timer->last_ms = GetTickCount64();
-        printf("[警告] 创建定时器失败，改用软件计时\n");
-        return;
+    tick->machine = machine;
+    tick->thread = NULL;
+    tick->stop_event = CreateEventA(NULL, TRUE, FALSE, NULL);
+    tick->timer = CreateWaitableTimerA(NULL, FALSE, NULL);
+
+    if (tick->stop_event == NULL || tick->timer == NULL) {
+        tick_thread_stop(tick);
+        return -1;
     }
 
     /* 负值表示相对时间，单位 100ns；同时给出周期实现自动重装 */
     due.QuadPart = -(LONGLONG)interval_ms * 10000;
-    SetWaitableTimer(timer->handle, &due, (LONG)interval_ms, NULL, NULL, FALSE);
-}
+    SetWaitableTimer(tick->timer, &due, (LONG)interval_ms, NULL, NULL, FALSE);
 
-/* 等待定时器或超时：返回 1 表示一个周期已到，返回 0 表示仅超时返回 */
-static int timer_wait(demo_timer_t *timer, unsigned poll_ms)
-{
-    unsigned long long now;
-
-    if (timer->handle == NULL) {
-        Sleep(poll_ms);
-        now = GetTickCount64();
-        if (now - timer->last_ms >= timer->interval_ms) {
-            timer->last_ms += timer->interval_ms;
-            return 1;
-        }
-        return 0;
+    tick->thread = CreateThread(NULL, 0, tick_thread_proc, tick, 0, NULL);
+    if (tick->thread == NULL) {
+        tick_thread_stop(tick);
+        return -1;
     }
 
-    return WaitForSingleObject(timer->handle, poll_ms) == WAIT_OBJECT_0;
-}
-
-/* 关闭并释放定时器资源 */
-static void timer_stop(demo_timer_t *timer)
-{
-    if (timer->handle != NULL) {
-        CloseHandle(timer->handle);
-        timer->handle = NULL;
-    }
+    return 0;
 }
 
 /* 查询控制台是否有按键输入，非阻塞 */
@@ -304,48 +389,53 @@ static int input_available(void)
 {
     return _kbhit() != 0;
 }
+
+/* 主线程空闲等待，避免空转占满 CPU */
+static void idle_wait(unsigned ms)
+{
+    Sleep(ms);
+}
 #else
-/* 非 Windows 平台使用单调时钟模拟周期定时器 */
+/* 节拍线程控制块：由线程内部的周期延时驱动状态机 */
 typedef struct {
-    unsigned interval_ms;       /* 定时周期，单位 ms */
-    unsigned long long last_ms; /* 上一次节拍的时间戳，单位 ms */
-} demo_timer_t;
+    state_machine_t *machine; /* 被驱动的状态机 */
+    pthread_t thread;         /* 线程句柄 */
+    volatile int running;     /* 运行标志，置 0 后线程在下个周期退出 */
+    unsigned interval_ms;     /* 节拍周期，单位 ms */
+} tick_thread_t;
 
-/* 读取单调时钟，返回毫秒数 */
-static unsigned long long monotonic_ms(void)
+/* 节拍线程入口：按固定周期延时后加锁执行状态机运行与事件处理 */
+static void *tick_thread_proc(void *arg)
 {
-    struct timespec ts;
+    tick_thread_t *tick = (tick_thread_t *)arg;
 
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (unsigned long long)ts.tv_sec * 1000u
-         + (unsigned long long)ts.tv_nsec / 1000000u;
-}
+    while (tick->running) {
+        usleep(tick->interval_ms * 1000u);
 
-/* 记录起始时间并保存定时周期 */
-static void timer_start(demo_timer_t *timer, unsigned interval_ms)
-{
-    timer->interval_ms = interval_ms;
-    timer->last_ms = monotonic_ms();
-}
-
-/* 延时 poll_ms 后检查是否已到一个周期：返回 1 表示周期到，返回 0 表示未到 */
-static int timer_wait(demo_timer_t *timer, unsigned poll_ms)
-{
-    unsigned long long now;
-
-    usleep(poll_ms * 1000u);
-    now = monotonic_ms();
-    if (now - timer->last_ms >= timer->interval_ms) {
-        timer->last_ms += timer->interval_ms;
-        return 1;
+        lock_acquire();
+        state_machine_run(tick->machine);
+        state_machine_process(tick->machine);
+        lock_release();
     }
-    return 0;
+
+    return NULL;
 }
 
-/* 非 Windows 平台无需释放定时器资源 */
-static void timer_stop(demo_timer_t *timer)
+/* 停止节拍线程并等待其退出 */
+static void tick_thread_stop(tick_thread_t *tick)
 {
-    (void)timer;
+    tick->running = 0;
+    pthread_join(tick->thread, NULL);
+}
+
+/* 启动节拍线程，成功返回 0，失败返回 -1 */
+static int tick_thread_start(tick_thread_t *tick, state_machine_t *machine, unsigned interval_ms)
+{
+    tick->machine = machine;
+    tick->interval_ms = interval_ms;
+    tick->running = 1;
+
+    return (pthread_create(&tick->thread, NULL, tick_thread_proc, tick) == 0) ? 0 : -1;
 }
 
 /* 使用 select 非阻塞查询标准输入是否有数据 */
@@ -361,19 +451,30 @@ static int input_available(void)
 
     return select(STDIN_FILENO + 1, &set, NULL, NULL, &tv) > 0;
 }
+
+/* 主线程空闲等待，避免空转占满 CPU */
+static void idle_wait(unsigned ms)
+{
+    usleep(ms * 1000u);
+}
 #endif
 
-/* 交互模式：定时器每 500ms 触发一次节拍，同时随时响应键盘命令 */
+/* 交互模式：节拍线程每 500ms 驱动一次状态机，主线程只负责读取命令 */
 static void run_interactive(state_machine_t *machine)
 {
-    demo_timer_t timer;
+    tick_thread_t tick;
+    int started;
     char line[64];
 
-    timer_start(&timer, TICK_INTERVAL_MS);
+    started = (tick_thread_start(&tick, machine, TICK_INTERVAL_MS) == 0);
+    if (!started) {
+        printf("[警告] 节拍线程启动失败，计数不会自动推进\n");
+    }
+
     printf("命令：start / stop / quit（每 500ms 自动计数一次）\n");
 
     for (;;) {
-        /* 有输入时读取一整行命令，命令之间按键不会影响节拍 */
+        /* 有输入时读取一整行命令，节拍线程在后台独立推进 */
         if (input_available()) {
             if (fgets(line, sizeof(line), stdin) == NULL) {
                 break;
@@ -391,14 +492,13 @@ static void run_interactive(state_machine_t *machine)
             }
         }
 
-        /* 定时器到期就执行一次状态运行与事件处理 */
-        if (timer_wait(&timer, INPUT_POLL_MS)) {
-            state_machine_run(machine);
-            state_machine_process(machine);
-        }
+        idle_wait(INPUT_POLL_MS);
     }
 
-    timer_stop(&timer);
+    /* 退出前先停掉节拍线程，保证后续统计不会与线程并发 */
+    if (started) {
+        tick_thread_stop(&tick);
+    }
 }
 
 /* 演示入口：带 --script 参数时跑脚本流程，否则进入交互模式 */
@@ -413,6 +513,7 @@ int main(int argc, char **argv)
     SetConsoleCP(CP_UTF8);
 #endif
 
+    lock_init();
     state_machine_init(&machine, &config, &ctx, sizeof(ctx));
 
     if (argc > 1 && strcmp(argv[1], "--script") == 0) {
@@ -425,5 +526,6 @@ int main(int argc, char **argv)
            state_machine_state_name(&machine, state_machine_current(&machine)),
            ctx.count, ctx.ticks);
 
+    lock_destroy();
     return 0;
 }
